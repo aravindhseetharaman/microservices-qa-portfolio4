@@ -99,7 +99,7 @@ jobs:
           exit 1
 
       - name: Install pact-broker CLI
-        run: gem install pact_broker-client --no-document
+        run: sudo gem install pact_broker-client --no-document
 
       - name: Create "test" deployment environment (idempotent)
         run: |
