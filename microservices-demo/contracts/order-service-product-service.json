@@ -1,0 +1,131 @@
+{
+  "consumer": {
+    "name": "order-service"
+  },
+  "provider": {
+    "name": "product-service"
+  },
+  "interactions": [
+    {
+      "description": "a request for product 1",
+      "providerState": "product with id 1 exists",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/products/1"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "id": 1,
+          "name": "Wireless Mouse",
+          "description": "Ergonomic wireless mouse",
+          "price": 29.99,
+          "stockQuantity": 100,
+          "category": {
+            "id": 2,
+            "name": "Laptops & Accessories",
+            "description": "Laptop peripherals",
+            "parentCategory": {
+              "id": 1,
+              "name": "Electronics",
+              "description": "All electronics",
+              "parentCategory": null
+            }
+          },
+          "supplier": {
+            "name": "Acme Peripherals Ltd",
+            "contactEmail": "sales@acmeperipherals.example",
+            "phone": "+1-555-0100"
+          }
+        },
+        "matchingRules": {
+          "body": {
+            "$.id": { "matchers": [{ "match": "number" }] },
+            "$.name": { "matchers": [{ "match": "type" }] },
+            "$.description": { "matchers": [{ "match": "type" }] },
+            "$.price": { "matchers": [{ "match": "decimal" }] },
+            "$.stockQuantity": { "matchers": [{ "match": "number" }] },
+            "$.category.id": { "matchers": [{ "match": "number" }] },
+            "$.category.name": { "matchers": [{ "match": "type" }] },
+            "$.category.description": { "matchers": [{ "match": "type" }] },
+            "$.category.parentCategory.id": { "matchers": [{ "match": "number" }] },
+            "$.category.parentCategory.name": { "matchers": [{ "match": "type" }] },
+            "$.category.parentCategory.description": { "matchers": [{ "match": "type" }] },
+            "$.supplier.name": { "matchers": [{ "match": "type" }] },
+            "$.supplier.contactEmail": { "matchers": [{ "match": "type" }] },
+            "$.supplier.phone": { "matchers": [{ "match": "type" }] }
+          }
+        }
+      }
+    },
+    {
+      "description": "a request to reserve 2 units of product 1",
+      "providerState": "product with id 1 exists and has sufficient stock",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/products/1/reserve-stock",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "quantity": 2
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "id": 1,
+          "name": "Wireless Mouse",
+          "description": "Ergonomic wireless mouse",
+          "price": 29.99,
+          "stockQuantity": 98,
+          "category": {
+            "id": 2,
+            "name": "Laptops & Accessories",
+            "description": "Laptop peripherals",
+            "parentCategory": {
+              "id": 1,
+              "name": "Electronics",
+              "description": "All electronics",
+              "parentCategory": null
+            }
+          },
+          "supplier": {
+            "name": "Acme Peripherals Ltd",
+            "contactEmail": "sales@acmeperipherals.example",
+            "phone": "+1-555-0100"
+          }
+        },
+        "matchingRules": {
+          "body": {
+            "$.id": { "matchers": [{ "match": "number" }] },
+            "$.name": { "matchers": [{ "match": "type" }] },
+            "$.description": { "matchers": [{ "match": "type" }] },
+            "$.price": { "matchers": [{ "match": "decimal" }] },
+            "$.stockQuantity": { "matchers": [{ "match": "number" }] },
+            "$.category.id": { "matchers": [{ "match": "number" }] },
+            "$.category.name": { "matchers": [{ "match": "type" }] },
+            "$.category.description": { "matchers": [{ "match": "type" }] },
+            "$.category.parentCategory.id": { "matchers": [{ "match": "number" }] },
+            "$.category.parentCategory.name": { "matchers": [{ "match": "type" }] },
+            "$.category.parentCategory.description": { "matchers": [{ "match": "type" }] },
+            "$.supplier.name": { "matchers": [{ "match": "type" }] },
+            "$.supplier.contactEmail": { "matchers": [{ "match": "type" }] },
+            "$.supplier.phone": { "matchers": [{ "match": "type" }] }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

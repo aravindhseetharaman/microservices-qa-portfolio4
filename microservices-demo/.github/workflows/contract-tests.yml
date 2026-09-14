@@ -1,0 +1,203 @@
+name: Contract Tests
+
+# Runs whenever either service changes, plus on PRs targeting main.
+# Spins up a throwaway Pact Broker for the run, has order-service (the
+# consumer) publish its contract to it, then has product-service (the
+# provider) fetch that contract from the broker and verify against a real
+# running instance. Fails the build if the provider breaks the contract.
+#
+# Then it runs `can-i-deploy`: a broker-side check that answers "if I
+# deploy this exact commit of order-service and this exact commit of
+# product-service together, is there a verified contract between them?"
+# This is a REAL gate here, not just a report: the Docker image build/push
+# steps for both services only run if can-i-deploy passes. On pushes to
+# main (not PRs) it then records both as deployed to the "test"
+# environment, which is what future can-i-deploy checks compare against.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "order-service/**"
+      - "product-service/**"
+      - ".github/workflows/contract-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "order-service/**"
+      - "product-service/**"
+      - ".github/workflows/contract-tests.yml"
+  workflow_dispatch: {}
+
+env:
+  PACT_BROKER_URL: http://localhost:9292
+  PACT_ENVIRONMENT: test
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      pact-broker-db:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_USER: pact_broker
+          POSTGRES_PASSWORD: pact_broker
+          POSTGRES_DB: pact_broker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pact_broker"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      pact-broker:
+        image: pactfoundation/pact-broker:latest
+        env:
+          PACT_BROKER_DATABASE_ADAPTER: postgres
+          PACT_BROKER_DATABASE_HOST: pact-broker-db
+          PACT_BROKER_DATABASE_PORT: 5432
+          PACT_BROKER_DATABASE_NAME: pact_broker
+          PACT_BROKER_DATABASE_USERNAME: pact_broker
+          PACT_BROKER_DATABASE_PASSWORD: pact_broker
+          PACT_BROKER_ALLOW_PUBLIC_READ: "true"
+        ports:
+          - 9292:9292
+        # No --health-cmd here: GitHub Actions blocks the job until a
+        # service's health check passes, and the pact-broker image doesn't
+        # reliably ship wget/curl to run one with. The "Wait for Pact
+        # Broker to be ready" step below does the same check from the
+        # runner itself instead, which is more portable.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Wait for Pact Broker to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "$PACT_BROKER_URL/diagnostic/status/heartbeat" > /dev/null; then
+              echo "Pact Broker is up"
+              exit 0
+            fi
+            echo "Waiting for Pact Broker... ($i/30)"
+            sleep 2
+          done
+          echo "Pact Broker did not become ready in time" >&2
+          exit 1
+
+      - name: Install pact-broker CLI
+        run: gem install pact_broker-client --no-document
+
+      - name: Create "test" deployment environment (idempotent)
+        run: |
+          pact-broker create-environment \
+            --name "$PACT_ENVIRONMENT" --no-production \
+            --broker-base-url "$PACT_BROKER_URL" || true
+
+      # --- Consumer side: order-service ---
+      - name: Run order-service consumer contract tests
+        working-directory: order-service
+        run: mvn -B test -Dtest=ProductServicePactConsumerTest
+
+      - name: Publish contract to Pact Broker
+        working-directory: order-service
+        run: >
+          mvn -B pact:publish
+          -Dpactbroker.url=${{ env.PACT_BROKER_URL }}
+          -Dpact.consumer.version=${{ github.sha }}
+          -Dpactbroker.consumertag=${{ github.ref_name }}
+
+      # --- Provider side: product-service ---
+      - name: Verify product-service against the published contract
+        working-directory: product-service
+        run: >
+          mvn -B test -Dtest=ProductServiceProviderPactTest
+          -Dpactbroker.url=${{ env.PACT_BROKER_URL }}
+          -Dpactbroker.consumertag=${{ github.ref_name }}
+          -Dpact.verifier.publishResults=true
+          -Dpact.provider.version=${{ github.sha }}
+          -Dpact.provider.tag=${{ github.ref_name }}
+
+      # --- Gate: can these exact versions actually be deployed together? ---
+      # Everything below this step only runs if this passes — that's what
+      # makes can-i-deploy a real gate rather than an informational check.
+      - name: can-i-deploy check
+        run: |
+          pact-broker can-i-deploy \
+            --pacticipant order-service --version "${{ github.sha }}" \
+            --pacticipant product-service --version "${{ github.sha }}" \
+            --to-environment "$PACT_ENVIRONMENT" \
+            --broker-base-url "$PACT_BROKER_URL" \
+            --retry-while-unknown 6 \
+            --retry-interval 5
+
+      # --- Build the deployable artifact for each service. Runs on every
+      #     PR too, as a smoke test that the Dockerfiles still build — but
+      #     only after can-i-deploy has passed. ---
+      - name: Build order-service Docker image
+        run: >
+          docker build
+          -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/order-service:${{ github.sha }}
+          ./order-service
+
+      - name: Build product-service Docker image
+        run: >
+          docker build
+          -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/product-service:${{ github.sha }}
+          ./product-service
+
+      # --- Actually publish the images and record the deployment. Only on
+      #     pushes to main — PRs build as a smoke test but don't ship
+      #     anything or mark a version as deployed. ---
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push order-service image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/order-service:${{ github.sha }}
+
+      - name: Push product-service image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/product-service:${{ github.sha }}
+
+      - name: Record order-service deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pact-broker record-deployment \
+            --pacticipant order-service --version "${{ github.sha }}" \
+            --environment "$PACT_ENVIRONMENT" \
+            --broker-base-url "$PACT_BROKER_URL"
+
+      - name: Record product-service deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          pact-broker record-deployment \
+            --pacticipant product-service --version "${{ github.sha }}" \
+            --environment "$PACT_ENVIRONMENT" \
+            --broker-base-url "$PACT_BROKER_URL"
+
+      - name: Upload contract as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pact-contract
+          path: order-service/target/pacts/*.json
+          if-no-files-found: warn

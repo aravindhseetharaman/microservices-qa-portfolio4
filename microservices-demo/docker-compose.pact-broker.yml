@@ -1,0 +1,54 @@
+# Standalone Pact Broker for local development.
+#
+# Usage:
+#   docker compose -f docker-compose.pact-broker.yml up -d
+#   # Broker UI: http://localhost:9292
+#
+#   cd order-service && mvn test && mvn pact:publish
+#   cd ../product-service && mvn test -Dtest=ProductServiceProviderPactTest
+#
+# This mirrors what CI does automatically in .github/workflows/contract-tests.yml,
+# so you can debug contract failures locally before pushing.
+version: "3.8"
+
+services:
+  pact-broker-db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: pact_broker
+      POSTGRES_PASSWORD: pact_broker
+      POSTGRES_DB: pact_broker
+    volumes:
+      - pact_broker_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pact_broker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    ports:
+      - "9292:9292"
+    environment:
+      PACT_BROKER_DATABASE_ADAPTER: postgres
+      PACT_BROKER_DATABASE_HOST: pact-broker-db
+      PACT_BROKER_DATABASE_PORT: 5432
+      PACT_BROKER_DATABASE_NAME: pact_broker
+      PACT_BROKER_DATABASE_USERNAME: pact_broker
+      PACT_BROKER_DATABASE_PASSWORD: pact_broker
+      # Local dev only — no auth. Add PACT_BROKER_BASIC_AUTH_USERNAME /
+      # _PASSWORD (and update the CI workflow + pom.xml credentials to match)
+      # before exposing this anywhere outside your machine.
+      PACT_BROKER_ALLOW_PUBLIC_READ: "true"
+    depends_on:
+      pact-broker-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9292/diagnostic/status/heartbeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  pact_broker_db_data:

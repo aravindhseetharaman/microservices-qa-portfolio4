@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>order-service</artifactId>
+    <version>1.0.0</version>
+    <name>order-service</name>
+    <description>Order management microservice</description>
+
+    <properties>
+        <java.version>17</java.version>
+
+        <!-- Pact Broker connection details for `mvn pact:publish`.
+             All overridable from the command line, e.g.
+             -Dpactbroker.url=https://your-org.pactflow.io -Dpact.consumer.version=1.2.3 -->
+        <pactbroker.url>http://localhost:9292</pactbroker.url>
+        <pactbroker.token></pactbroker.token>
+        <pactbroker.consumertag>main</pactbroker.consumertag>
+        <pact.consumer.version>0.0.0-local</pact.consumer.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+            <!-- Provides WebClient for calling product-service.
+                 Only the reactive HTTP client is used here; the app itself is a
+                 standard blocking MVC app via spring-boot-starter-web above. -->
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- Consumer-driven contract testing: generates a Pact contract
+                 file describing every HTTP call order-service makes to
+                 product-service, based on the interactions defined in
+                 src/test/java/.../contract/ProductServicePactConsumerTest.java -->
+            <groupId>au.com.dius.pact.consumer</groupId>
+            <artifactId>junit5</artifactId>
+            <version>4.6.5</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- Provides `mvn pact:publish`, which uploads whatever contract
+                     files are in target/pacts to the Pact Broker configured via
+                     the pactbroker.* properties above. Run `mvn test` first so
+                     there's actually a contract in target/pacts to publish. -->
+                <groupId>au.com.dius.pact.provider</groupId>
+                <artifactId>maven</artifactId>
+                <version>4.6.5</version>
+                <configuration>
+                    <pactBrokerUrl>${pactbroker.url}</pactBrokerUrl>
+                    <pactBrokerToken>${pactbroker.token}</pactBrokerToken>
+                    <projectVersion>${pact.consumer.version}</projectVersion>
+                    <trimSnapshot>true</trimSnapshot>
+                    <tags>
+                        <tag>${pactbroker.consumertag}</tag>
+                    </tags>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
